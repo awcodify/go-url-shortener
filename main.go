@@ -21,6 +21,7 @@ type Url struct {
 
 type Codec interface {
 	Encode(string) string
+	Decode(string) (string, error)
 }
 
 type Base64 struct {
@@ -41,6 +42,14 @@ func (b Base64) Encode(s string) string {
 	return strings.Replace(str, "=", "", -1)
 }
 
+func (b Base64) Decode(s string) (string, error) {
+	if l := len(s) % 4; l != 0 {
+		s += strings.Repeat("=", 4-l)
+	}
+	str, err := base64.URLEncoding.DecodeString(s)
+	return string(str), err
+}
+
 func main() {
 	db := Database()
 	db.AutoMigrate(&Url{})
@@ -49,6 +58,7 @@ func main() {
 
 	r := mux.NewRouter()
 	r.HandleFunc("/", handleCreate).Methods("POST")
+	r.HandleFunc("/{id}", handleRedirect)
 	http.ListenAndServe(":3000", r)
 }
 
@@ -83,4 +93,12 @@ func handleCreate(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(201)
 	w.Write(result)
 	return
+}
+
+func handleRedirect(w http.ResponseWriter, r *http.Request) {
+	id, _ := codec.Decode(mux.Vars(r)["id"])
+	var url Url
+	db := Database()
+	db.First(&url, id)
+	http.Redirect(w, r, url.Source, 301)
 }
