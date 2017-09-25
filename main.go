@@ -95,19 +95,13 @@ func handleCreate(w http.ResponseWriter, r *http.Request) {
 	source := r.FormValue("url")
 	isUrl := xurls.Relaxed().FindString(source)
 
-	if len(isUrl) == 0 {
-		mapResult := map[string]string{"message": "url not valid!"}
-		result, _ := json.Marshal(mapResult)
-		w.WriteHeader(400)
-		w.Write(result)
+	if len(source) == 0 {
+		handleError(400, "Please fill URL param!", w)
 		return
 	}
 
-	if len(source) == 0 {
-		mapResult := map[string]string{"message": "url not found!"}
-		result, _ := json.Marshal(mapResult)
-		w.WriteHeader(400)
-		w.Write(result)
+	if len(isUrl) == 0 {
+		handleError(400, "URL not valid!", w)
 		return
 	}
 
@@ -126,9 +120,20 @@ func handleCreate(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleRedirect(w http.ResponseWriter, r *http.Request) {
-	id, _ := codec.Decode(mux.Vars(r)["id"])
+	id, err := codec.Decode(mux.Vars(r)["id"])
+	if err != nil {
+		handleError(404, "Not found!", w)
+		return
+	}
 	var url Url
 	db := Database()
 	db.First(&url, id)
 	http.Redirect(w, r, url.Source, 301)
+}
+
+func handleError(code int, message string, w http.ResponseWriter) {
+	mapResult := ApiResponse{Status: code, Message: message}
+	result, _ := json.Marshal(mapResult)
+	w.WriteHeader(code)
+	w.Write(result)
 }
