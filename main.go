@@ -13,6 +13,7 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/gorilla/mux"
 	"github.com/jinzhu/gorm"
+	"mvdan.cc/xurls"
 )
 
 var codec Codec
@@ -92,6 +93,15 @@ func Database() *gorm.DB {
 
 func handleCreate(w http.ResponseWriter, r *http.Request) {
 	source := r.FormValue("url")
+	isUrl := xurls.Relaxed().FindString(source)
+
+	if len(isUrl) == 0 {
+		mapResult := map[string]string{"message": "url not valid!"}
+		result, _ := json.Marshal(mapResult)
+		w.WriteHeader(400)
+		w.Write(result)
+		return
+	}
 
 	if len(source) == 0 {
 		mapResult := map[string]string{"message": "url not found!"}
