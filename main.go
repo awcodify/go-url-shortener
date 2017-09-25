@@ -121,13 +121,14 @@ func handleCreate(w http.ResponseWriter, r *http.Request) {
 
 func handleRedirect(w http.ResponseWriter, r *http.Request) {
 	id, err := codec.Decode(mux.Vars(r)["id"])
-	if err != nil {
-		handleError(404, "Not found!", w)
-		return
-	}
 	var url Url
 	db := Database()
 	db.First(&url, id)
+
+	if url.ID == 0 || err != nil {
+		handleError(404, "Not found!", w)
+		return
+	}
 	http.Redirect(w, r, url.Source, 301)
 }
 
