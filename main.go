@@ -9,7 +9,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/BurntSushi/toml"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/gorilla/mux"
 	"github.com/jinzhu/gorm"
@@ -18,40 +17,48 @@ import (
 
 var codec Codec
 
+// Config used for database configuration
 type Config struct {
-	DB_NAME     string
-	DB_USER     string
-	DB_PASSWORD string
+	DbName     string `json:"DB_NAME"`
+	DbUser     string `json:"DB_USER"`
+	DbPassword string `json:"DB_PASSWORD"`
 }
 
-type Url struct {
+// URL is used for database migration
+type URL struct {
 	gorm.Model
 	Source string `json:"source"`
 }
 
+// Codec is used for encoding / decoing our source url id
 type Codec interface {
 	Encode(string) string
 	Decode(string) (string, error)
 }
 
+// Base64 is main struct for our base64 encoding
 type Base64 struct {
 	e *base64.Encoding
 }
 
-type ApiResponse struct {
+// ErrorResponse should throw status and message
+type ErrorResponse struct {
 	Status  int
 	Message string
 }
 
+// Base64Codec is used to initialize our base64
 func Base64Codec() Base64 {
 	return Base64{base64.URLEncoding}
 }
 
+// Encode will convert our source id into Base64
 func (b Base64) Encode(s string) string {
 	str := base64.URLEncoding.EncodeToString([]byte(s))
 	return strings.Replace(str, "=", "", -1)
 }
 
+// Decode will convert Base64 to source url id so then we can find source url in database
 func (b Base64) Decode(s string) (string, error) {
 	if l := len(s) % 4; l != 0 {
 		s += strings.Repeat("=", 4-l)
@@ -61,8 +68,8 @@ func (b Base64) Decode(s string) (string, error) {
 }
 
 func main() {
-	db := Database()
-	db.AutoMigrate(&Url{})
+	db := database()
+	db.AutoMigrate(&URL{})
 
 	codec = Base64Codec()
 
@@ -72,19 +79,20 @@ func main() {
 	http.ListenAndServe(":3000", r)
 }
 
-func Database() *gorm.DB {
-	var configfile = "./db.conf"
-	_, err := os.Stat(configfile)
+func database() *gorm.DB {
+	var configfile = "./db.json"
+	var config Config
+	file, err := os.Open(configfile)
 	if err != nil {
 		log.Fatal("Config file is missing: ", configfile)
 	}
-
-	var config Config
-	if _, err := toml.DecodeFile(configfile, &config); err != nil {
+	decoder := json.NewDecoder(file)
+	err = decoder.Decode(&config)
+	if err != nil {
 		log.Fatal(err)
 	}
 
-	db, err := gorm.Open("mysql", config.DB_USER+":"+config.DB_PASSWORD+"@/"+config.DB_NAME+"?charset=utf8&parseTime=True&loc=Local")
+	db, err := gorm.Open("mysql", config.DbUser+":"+config.DbPassword+"@/"+config.DbName+"?charset=utf8&parseTime=True&loc=Local")
 	if err != nil {
 		panic("failed to connect database")
 	}
@@ -93,20 +101,20 @@ func Database() *gorm.DB {
 
 func handleCreate(w http.ResponseWriter, r *http.Request) {
 	source := r.FormValue("url")
-	isUrl := xurls.Relaxed().FindString(source)
+	isURL := xurls.Relaxed().FindString(source)
 
 	if len(source) == 0 {
 		handleError(400, "Please fill URL param!", w)
 		return
 	}
 
-	if len(isUrl) == 0 {
+	if len(isURL) == 0 {
 		handleError(400, "URL not valid!", w)
 		return
 	}
 
-	url := Url{Source: source}
-	db := Database()
+	url := URL{Source: source}
+	db := database()
 	db.Save(&url)
 
 	hash := fmt.Sprint(url.ID)
@@ -121,8 +129,8 @@ func handleCreate(w http.ResponseWriter, r *http.Request) {
 
 func handleRedirect(w http.ResponseWriter, r *http.Request) {
 	id, err := codec.Decode(mux.Vars(r)["id"])
-	var url Url
-	db := Database()
+	var url URL
+	db := database()
 	db.First(&url, id)
 
 	if url.ID == 0 || err != nil {
@@ -133,7 +141,7 @@ func handleRedirect(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleError(code int, message string, w http.ResponseWriter) {
-	mapResult := ApiResponse{Status: code, Message: message}
+	mapResult := ErrorResponse{Status: code, Message: message}
 	result, _ := json.Marshal(mapResult)
 	w.WriteHeader(code)
 	w.Write(result)
